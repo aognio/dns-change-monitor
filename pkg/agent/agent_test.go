@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/agent"
+	"github.com/aognio/dns-change-monitor/pkg/agent"
 )
 
 // failingAgent fails a number of times before it stops.

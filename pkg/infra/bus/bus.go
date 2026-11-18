@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 // MemoryBus delivers events to the handlers registered for their name.

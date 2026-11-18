@@ -1,4 +1,4 @@
-module github.com/gnrfan/dns-change-monitor
+module github.com/aognio/dns-change-monitor
 
 go 1.27.3
 

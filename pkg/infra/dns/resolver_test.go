@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/record"
-	"github.com/gnrfan/dns-change-monitor/pkg/infra/dns"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
+	"github.com/aognio/dns-change-monitor/pkg/infra/dns"
 	mdns "github.com/miekg/dns"
 )
 

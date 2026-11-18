@@ -5,9 +5,9 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/app"
-	"github.com/gnrfan/dns-change-monitor/pkg/config"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/record"
+	"github.com/aognio/dns-change-monitor/pkg/app"
+	"github.com/aognio/dns-change-monitor/pkg/config"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
 )
 
 // checkRecords resolves the monitored records once and compares the answers

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/pairing"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/subscriber"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/telegram"
+	"github.com/aognio/dns-change-monitor/pkg/domain/pairing"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/subscriber"
+	"github.com/aognio/dns-change-monitor/pkg/domain/telegram"
 )
 
 // Outcome describes the result of a pairing attempt.

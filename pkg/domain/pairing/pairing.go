@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 // Token is a one-shot authorization credential.

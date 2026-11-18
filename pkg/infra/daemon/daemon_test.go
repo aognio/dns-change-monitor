@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/infra/daemon"
+	"github.com/aognio/dns-change-monitor/pkg/infra/daemon"
 )
 
 const pidFileVariable = "DNSMON_TEST_PID_FILE"

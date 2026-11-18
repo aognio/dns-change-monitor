@@ -3,7 +3,7 @@ package record
 import (
 	"testing"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 func TestDiffValuesReportsAdditionsAndRemovals(t *testing.T) {

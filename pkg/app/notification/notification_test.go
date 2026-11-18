@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	appnotification "github.com/gnrfan/dns-change-monitor/pkg/app/notification"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/change"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/record"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/subscriber"
-	"github.com/gnrfan/dns-change-monitor/pkg/testsupport"
+	appnotification "github.com/aognio/dns-change-monitor/pkg/app/notification"
+	"github.com/aognio/dns-change-monitor/pkg/domain/change"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/subscriber"
+	"github.com/aognio/dns-change-monitor/pkg/testsupport"
 )
 
 func newChange(t *testing.T) change.Change {

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/record"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 // Environment variables that override file based settings.

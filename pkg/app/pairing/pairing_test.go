@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	apppairing "github.com/gnrfan/dns-change-monitor/pkg/app/pairing"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/subscriber"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/telegram"
-	"github.com/gnrfan/dns-change-monitor/pkg/testsupport"
+	apppairing "github.com/aognio/dns-change-monitor/pkg/app/pairing"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/subscriber"
+	"github.com/aognio/dns-change-monitor/pkg/domain/telegram"
+	"github.com/aognio/dns-change-monitor/pkg/testsupport"
 )
 
 func newService(tokens *testsupport.Tokens, subscribers *testsupport.Subscribers, allowlist ...string) *apppairing.Service {

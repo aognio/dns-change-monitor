@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/build"
-	"github.com/gnrfan/dns-change-monitor/pkg/config"
+	"github.com/aognio/dns-change-monitor/pkg/build"
+	"github.com/aognio/dns-change-monitor/pkg/config"
 )
 
 const usage = `dnsmon - DNS change monitor with Telegram notifications

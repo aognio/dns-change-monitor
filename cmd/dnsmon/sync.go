@@ -5,8 +5,8 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/app"
-	"github.com/gnrfan/dns-change-monitor/pkg/config"
+	"github.com/aognio/dns-change-monitor/pkg/app"
+	"github.com/aognio/dns-change-monitor/pkg/config"
 )
 
 // syncConfiguration applies the configuration file to the database without

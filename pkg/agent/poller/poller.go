@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/app/polling"
+	"github.com/aognio/dns-change-monitor/pkg/app/polling"
 )
 
 // Agent resolves the monitored DNS names on a fixed schedule and records the

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/app"
-	"github.com/gnrfan/dns-change-monitor/pkg/app/pairing"
-	"github.com/gnrfan/dns-change-monitor/pkg/config"
+	"github.com/aognio/dns-change-monitor/pkg/app"
+	"github.com/aognio/dns-change-monitor/pkg/app/pairing"
+	"github.com/aognio/dns-change-monitor/pkg/config"
 )
 
 // runToken dispatches the pairing token commands.

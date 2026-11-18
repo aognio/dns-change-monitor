@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"strings"
 
-	apppairing "github.com/gnrfan/dns-change-monitor/pkg/app/pairing"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/notification"
-	domaintelegram "github.com/gnrfan/dns-change-monitor/pkg/domain/telegram"
+	apppairing "github.com/aognio/dns-change-monitor/pkg/app/pairing"
+	"github.com/aognio/dns-change-monitor/pkg/domain/notification"
+	domaintelegram "github.com/aognio/dns-change-monitor/pkg/domain/telegram"
 )
 
 // StatusProvider renders the state of the monitor for the status command.

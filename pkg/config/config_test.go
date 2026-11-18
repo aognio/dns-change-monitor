@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/config"
+	"github.com/aognio/dns-change-monitor/pkg/config"
 )
 
 func writeConfig(t *testing.T, content string) string {

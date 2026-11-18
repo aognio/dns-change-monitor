@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/change"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/record"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/change"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 // Failure describes a target that could not be resolved during a sweep.

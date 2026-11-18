@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/app/polling"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/change"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/record"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
-	"github.com/gnrfan/dns-change-monitor/pkg/testsupport"
+	"github.com/aognio/dns-change-monitor/pkg/app/polling"
+	"github.com/aognio/dns-change-monitor/pkg/domain/change"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/testsupport"
 )
 
 func newTarget(t *testing.T, name string) record.Target {

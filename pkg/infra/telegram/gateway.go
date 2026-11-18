@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/notification"
-	domaintelegram "github.com/gnrfan/dns-change-monitor/pkg/domain/telegram"
+	"github.com/aognio/dns-change-monitor/pkg/domain/notification"
+	domaintelegram "github.com/aognio/dns-change-monitor/pkg/domain/telegram"
 	telebot "gopkg.in/telebot.v3"
 )
 

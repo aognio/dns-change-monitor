@@ -1,6 +1,6 @@
 [Unit]
 Description=DNS change monitor with Telegram notifications
-Documentation=https://github.com/gnrfan/dns-change-monitor
+Documentation=https://github.com/aognio/dns-change-monitor
 After=network-online.target
 Wants=network-online.target
 

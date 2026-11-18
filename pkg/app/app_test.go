@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/app"
-	"github.com/gnrfan/dns-change-monitor/pkg/config"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/notification"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/subscriber"
-	domaintelegram "github.com/gnrfan/dns-change-monitor/pkg/domain/telegram"
-	"github.com/gnrfan/dns-change-monitor/pkg/testsupport"
+	"github.com/aognio/dns-change-monitor/pkg/app"
+	"github.com/aognio/dns-change-monitor/pkg/config"
+	"github.com/aognio/dns-change-monitor/pkg/domain/notification"
+	"github.com/aognio/dns-change-monitor/pkg/domain/subscriber"
+	domaintelegram "github.com/aognio/dns-change-monitor/pkg/domain/telegram"
+	"github.com/aognio/dns-change-monitor/pkg/testsupport"
 )
 
 // gateway is a Telegram gateway driven by the test.

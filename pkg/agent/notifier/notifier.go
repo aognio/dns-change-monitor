@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/app/notification"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/change"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/app/notification"
+	"github.com/aognio/dns-change-monitor/pkg/domain/change"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 // Agent turns change events into Telegram notifications.

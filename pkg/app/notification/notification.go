@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/change"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/notification"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/subscriber"
+	"github.com/aognio/dns-change-monitor/pkg/domain/change"
+	"github.com/aognio/dns-change-monitor/pkg/domain/notification"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/subscriber"
 )
 
 // Service delivers change reports to subscribers.

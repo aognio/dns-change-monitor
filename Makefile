@@ -23,7 +23,7 @@ endif
 
 # --- Project -----------------------------------------------------------------
 BINARY   := dnsmon
-MODULE   := github.com/gnrfan/dns-change-monitor
+MODULE   := github.com/aognio/dns-change-monitor
 CMD      := ./cmd/$(BINARY)
 BUILDPKG := $(MODULE)/pkg/build
 

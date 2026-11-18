@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/record"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
 	mdns "github.com/miekg/dns"
 )
 

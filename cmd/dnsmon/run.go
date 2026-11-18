@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/app"
-	"github.com/gnrfan/dns-change-monitor/pkg/config"
-	"github.com/gnrfan/dns-change-monitor/pkg/infra/daemon"
+	"github.com/aognio/dns-change-monitor/pkg/app"
+	"github.com/aognio/dns-change-monitor/pkg/config"
+	"github.com/aognio/dns-change-monitor/pkg/infra/daemon"
 )
 
 // runMonitor starts the monitor, either in the foreground or as a daemon.

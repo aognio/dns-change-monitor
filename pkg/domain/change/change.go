@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/record"
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 // EventRecorded is the name under which newly detected changes are

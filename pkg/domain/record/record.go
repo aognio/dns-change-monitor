@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 // ErrNoRecords reports that a name carries no record of the requested type,

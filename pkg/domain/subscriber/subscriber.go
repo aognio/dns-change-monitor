@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gnrfan/dns-change-monitor/pkg/domain/shared"
+	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 )
 
 // EventPaired is the name under which a successful pairing is published.

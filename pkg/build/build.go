@@ -1,6 +1,6 @@
 // Package build carries the metadata of the binary.
 //
-// The values are set at link time with -ldflags "-X github.com/gnrfan/dns-change-monitor/pkg/build.Version=..."
+// The values are set at link time with -ldflags "-X github.com/aognio/dns-change-monitor/pkg/build.Version=..."
 // so that a released binary reports where it came from.
 package build
 
