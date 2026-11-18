@@ -73,6 +73,44 @@ token = "123456:secret"
 	if cfg.Pairing.TokenTTLMinutes != 30 {
 		t.Fatalf("unexpected token lifetime: %d", cfg.Pairing.TokenTTLMinutes)
 	}
+	if cfg.Log.File == "" {
+		t.Fatal("the defaults must fill the path of the plain text log file")
+	}
+	if cfg.Log.FileLevel != "info" {
+		t.Fatalf("unexpected log file level: %q", cfg.Log.FileLevel)
+	}
+}
+
+func TestLoadRejectsAnUnknownLogFileLevel(t *testing.T) {
+	path := writeConfig(t, `
+[telegram]
+token = "123456:secret"
+
+[log]
+file_level = "chatty"
+`)
+
+	if _, err := config.Load(path); err == nil {
+		t.Fatal("expected an error for an unknown log file level")
+	}
+}
+
+func TestLoadAcceptsADisabledLogFile(t *testing.T) {
+	path := writeConfig(t, `
+[telegram]
+token = "123456:secret"
+
+[log]
+file = "none"
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Log.File != "" {
+		t.Fatalf("unexpected log file: %q", cfg.Log.File)
+	}
 }
 
 func TestLoadRejectsAMissingToken(t *testing.T) {

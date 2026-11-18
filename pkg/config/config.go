@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,9 @@ const (
 	// DefaultPath is the configuration file looked up when none is given.
 	DefaultPath = "config.toml"
 )
+
+// LogFileNone disables the plain text log file.
+const LogFileNone = "none"
 
 // Config is the whole configuration of the daemon.
 type Config struct {
@@ -101,6 +105,12 @@ type Log struct {
 	Level string `toml:"level"`
 	// Format is either text or json.
 	Format string `toml:"format"`
+	// File is the plain text log file, one line per event. It is empty
+	// when no file is written.
+	File string `toml:"file"`
+	// FileLevel is the minimum severity written to the log file. It
+	// defaults to the level of the standard output.
+	FileLevel string `toml:"file_level"`
 }
 
 // Defaults applied when the file leaves a value unset.
@@ -161,8 +171,17 @@ func (c *Config) applyDefaults() {
 	if c.Daemon.LogFile == "" {
 		c.Daemon.LogFile = filepath.Join(filepath.Dir(c.Database.Path), "dnsmon.log")
 	}
+	if c.Log.File == "" {
+		c.Log.File = filepath.Join(filepath.Dir(c.Database.Path), "dnsmon-events.log")
+	}
+	if strings.EqualFold(strings.TrimSpace(c.Log.File), LogFileNone) {
+		c.Log.File = ""
+	}
 	if c.Log.Level == "" {
 		c.Log.Level = "info"
+	}
+	if c.Log.FileLevel == "" {
+		c.Log.FileLevel = c.Log.Level
 	}
 	if c.Log.Format == "" {
 		c.Log.Format = "text"
@@ -205,7 +224,32 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("%w: log.format %q is not a known format", shared.ErrInvalid, c.Log.Format)
 	}
+	switch strings.ToLower(c.Log.FileLevel) {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("%w: log.file_level %q is not a known level", shared.ErrInvalid, c.Log.FileLevel)
+	}
 	return nil
+}
+
+// LogLevel returns the minimum severity written to the standard output.
+func (c *Config) LogLevel() slog.Level { return ParseLevel(c.Log.Level) }
+
+// LogFileLevel returns the minimum severity written to the log file.
+func (c *Config) LogFileLevel() slog.Level { return ParseLevel(c.Log.FileLevel) }
+
+// ParseLevel maps a level name to its severity.
+func ParseLevel(name string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // Interval returns the delay between two consecutive checks.

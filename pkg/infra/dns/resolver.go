@@ -4,6 +4,7 @@ package dns
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type Resolver struct {
 	maxCnameHops    int
 	systemFallback  bool
 	defaultResolver string
+	logger          *slog.Logger
 }
 
 // Options configure the resolver.
@@ -30,6 +32,9 @@ type Options struct {
 	Servers []string
 	// Timeout bounds a single exchange with a name server.
 	Timeout time.Duration
+	// Logger receives the diagnostics of the adapter, in particular the
+	// record of every query sent to a name server.
+	Logger *slog.Logger
 }
 
 // New builds a resolver.
@@ -38,11 +43,16 @@ func New(options Options) *Resolver {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
+	logger := options.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Resolver{
 		client:         &mdns.Client{Timeout: timeout},
 		defaultServers: append([]string(nil), options.Servers...),
 		timeout:        timeout,
 		maxCnameHops:   8,
+		logger:         logger,
 	}
 }
 
@@ -92,8 +102,21 @@ func (r *Resolver) exchange(ctx context.Context, server, name string, queryType 
 	message.SetQuestion(mdns.Fqdn(name), queryType)
 	message.RecursionDesired = true
 
+	typeName := mdns.TypeToString[queryType]
+	r.logger.Info("dns query",
+		slog.String("name", name),
+		slog.String("type", typeName),
+		slog.String("server", server))
+
+	started := time.Now()
 	response, _, err := r.client.ExchangeContext(ctx, message, server)
 	if err != nil {
+		r.logger.Warn("dns query failed",
+			slog.String("name", name),
+			slog.String("type", typeName),
+			slog.String("server", server),
+			slog.Duration("elapsed", time.Since(started)),
+			slog.String("error", err.Error()))
 		return nil, 0, "", fmt.Errorf("query %s %s via %s: %w", name, mdns.TypeToString[queryType], server, err)
 	}
 	switch response.Rcode {
@@ -126,6 +149,14 @@ func (r *Resolver) exchange(ctx context.Context, server, name string, queryType 
 			values = append(values, formatAnswer(answer))
 		}
 	}
+
+	r.logger.Info("dns answer",
+		slog.String("name", name),
+		slog.String("type", typeName),
+		slog.String("server", server),
+		slog.Int("answers", len(values)),
+		slog.Duration("elapsed", time.Since(started)))
+
 	return values, ttl, canonical, nil
 }
 

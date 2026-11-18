@@ -206,6 +206,10 @@ and the bot answers that the account is authorized. A token can only be
 redeemed once, expires after `pairing.token_ttl_minutes` minutes, and is not
 consumed when the account is not allowed to use the bot.
 
+Sending the bare command `/start` without a token makes the bot answer that
+it is running, which is the quickest way to check that the bot is alive and
+that it can reach the operator.
+
 ### 5. Run the monitor
 
 ```bash
@@ -255,7 +259,32 @@ the command.
 | `daemon` | `pid_file` | next to the database | Where the process identifier is written |
 | `daemon` | `log_file` | next to the database | Where the background daemon writes its output |
 | `log` | `level` | `info` | `debug`, `info`, `warn` or `error` |
-| `log` | `format` | `text` | `text` or `json` |
+| `log` | `format` | `text` | `text` or `json`, for the standard output |
+| `log` | `file` | next to the database | The plain text log file, one line per event, `none` disables it |
+| `log` | `file_level` | the level of the standard output | `debug`, `info`, `warn` or `error` |
+
+## Reading the logs
+
+The monitor writes two streams. The standard output carries the events in
+the format chosen with `log.format`, and the file named by `log.file`
+carries them as plain text, one line per event, whatever the format of the
+standard output is.
+
+```
+2026-11-18T17:31:02Z INFO dns query name=example.com type=A server=1.1.1.1:53
+2026-11-18T17:31:02Z INFO dns answer name=example.com type=A server=1.1.1.1:53 answers=1 elapsed=12ms
+2026-11-18T17:31:02Z INFO baseline recorded name=example.com type=A
+```
+
+The DNS queries are the quickest way to confirm that the monitor is doing
+its job: every check of a record produces one `dns query` line, followed by
+a `dns answer` line with the number of answers, or by a `dns query failed`
+line with the reason.
+
+```bash
+tail -f data/dnsmon-events.log
+grep "dns query" data/dnsmon-events.log
+```
 
 ## The libraries
 
@@ -282,6 +311,7 @@ Every package below is usable on its own.
 | `pkg/infra/telegram` | The gateway and the notifier of the Telegram bot |
 | `pkg/infra/bus` | The in-process event bus |
 | `pkg/infra/daemon` | The background operation and the process identifier file |
+| `pkg/infra/logging` | The loggers, with the plain text file writer |
 | `pkg/config` | The loader and the validation of the configuration |
 | `pkg/app` | The composition root assembling everything |
 
@@ -355,7 +385,8 @@ The installation writes:
 | `/etc/dnsmon/config.toml` | The configuration |
 
 The database lives in `/var/lib/dnsmon/dnsmon.db`, a directory that systemd
-creates and hands over to the service. The unit runs with a temporary
+creates and hands over to the service. The plain text log file lives there
+too, at `/var/lib/dnsmon/dnsmon-events.log`. The unit runs with a temporary
 identity, so no account has to exist on the machine, and it restricts the
 filesystem to what the monitor needs: it reads its configuration, writes its
 database and reaches the name servers and the Telegram API.

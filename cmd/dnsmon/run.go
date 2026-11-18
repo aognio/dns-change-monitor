@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/aognio/dns-change-monitor/pkg/app"
 	"github.com/aognio/dns-change-monitor/pkg/config"
 	"github.com/aognio/dns-change-monitor/pkg/infra/daemon"
+	"github.com/aognio/dns-change-monitor/pkg/infra/logging"
 )
 
 // runMonitor starts the monitor, either in the foreground or as a daemon.
@@ -54,16 +56,18 @@ func startDaemon(cfg *config.Config, configPath string) error {
 		return err
 	}
 	fmt.Printf("the monitor runs in the background with the process identifier %d\n", pid)
-	fmt.Printf("logs are written to %s\n", cfg.Daemon.LogFile)
+	fmt.Printf("the output is written to %s\n", cfg.Daemon.LogFile)
+	fmt.Printf("the plain text log is written to %s\n", cfg.Log.File)
 	return nil
 }
 
 // runForeground runs the monitor in the current process.
 func runForeground(cfg *config.Config) error {
-	logger, err := newLogger(cfg)
+	logger, closer, err := newDaemonLogger(cfg)
 	if err != nil {
 		return err
 	}
+	defer closer.Close()
 
 	application, err := app.Open(cfg, logger)
 	if err != nil {
@@ -172,22 +176,25 @@ func showStatus(args []string) error {
 }
 
 // newLogger builds the logger described by the configuration.
+//
+// The logger writes to the standard output in the configured format.
 func newLogger(cfg *config.Config) (*slog.Logger, error) {
-	var level slog.Level
-	switch cfg.Log.Level {
-	case "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
+	logger, _, err := logging.New(logging.Options{
+		Level:  cfg.LogLevel(),
+		Format: cfg.Log.Format,
+	})
+	return logger, err
+}
 
-	options := &slog.HandlerOptions{Level: level}
-	if cfg.Log.Format == "json" {
-		return slog.New(slog.NewJSONHandler(os.Stdout, options)), nil
-	}
-	return slog.New(slog.NewTextHandler(os.Stdout, options)), nil
+// newDaemonLogger builds the logger of the long running monitor.
+//
+// Besides the standard output, the monitor writes a plain text log file
+// with one line per event.
+func newDaemonLogger(cfg *config.Config) (*slog.Logger, io.Closer, error) {
+	return logging.New(logging.Options{
+		Level:     cfg.LogLevel(),
+		Format:    cfg.Log.Format,
+		FilePath:  cfg.Log.File,
+		FileLevel: cfg.LogFileLevel(),
+	})
 }

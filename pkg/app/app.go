@@ -116,6 +116,7 @@ func (a *App) Services() (*polling.Service, *appnotification.Service, *apppairin
 		resolver = dns.New(dns.Options{
 			Servers: a.Config.Monitor.Resolvers,
 			Timeout: a.Config.QueryTimeout(),
+			Logger:  a.Logger,
 		})
 	}
 
@@ -351,6 +352,7 @@ func (a *App) Check(ctx context.Context) ([]CheckResult, error) {
 		resolver = dns.New(dns.Options{
 			Servers: a.Config.Monitor.Resolvers,
 			Timeout: a.Config.QueryTimeout(),
+			Logger:  a.Logger,
 		})
 	}
 

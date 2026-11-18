@@ -28,10 +28,11 @@ func checkRecords(args []string) error {
 		return err
 	}
 
-	logger, err := newLogger(cfg)
+	logger, closer, err := newDaemonLogger(cfg)
 	if err != nil {
 		return err
 	}
+	defer closer.Close()
 
 	application, err := app.Open(cfg, logger)
 	if err != nil {

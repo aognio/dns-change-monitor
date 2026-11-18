@@ -43,5 +43,11 @@ token_ttl_minutes = 30
 [log]
 # One of debug, info, warn or error.
 level = "info"
-# One of text or json.
+# One of text or json. It applies to the standard output only.
 format = "text"
+# The plain text log file, one line per event. The service declares
+# StateDirectory=dnsmon, so the file is written in /var/lib/dnsmon.
+file = "/var/lib/dnsmon/dnsmon-events.log"
+# The minimum severity written to the log file. It defaults to the level
+# of the standard output.
+file_level = "info"

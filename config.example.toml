@@ -62,5 +62,11 @@ log_file = "data/dnsmon.log"
 [log]
 # One of debug, info, warn or error.
 level = "info"
-# One of text or json.
+# One of text or json. It applies to the standard output only.
 format = "text"
+# The plain text log file, one line per event. It is always written as
+# plain text, whatever the format of the standard output is.
+file = "data/dnsmon-events.log"
+# The minimum severity written to the log file. It defaults to the level
+# of the standard output.
+file_level = "info"
