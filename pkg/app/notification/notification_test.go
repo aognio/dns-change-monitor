@@ -121,3 +121,123 @@ func TestRenderDescribesTheChange(t *testing.T) {
 		}
 	}
 }
+
+func newVerdictChange(t *testing.T, kind change.Kind, mode record.Mode, reason string,
+	added, removed []string,
+) change.Change {
+	t.Helper()
+	detected, err := change.NewVerdict("change-2", record.Target{
+		ID:   "target-1",
+		Name: "example.com",
+		Type: record.TypeA,
+	}, added, removed, kind, mode, reason, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return detected
+}
+
+func TestRenderKeepsTheMessageOfTheChangeModeUnchanged(t *testing.T) {
+	body := appnotification.Render(newChange(t))
+	if strings.Contains(body, "Assert") || strings.Contains(body, "Reason") {
+		t.Fatalf("the change mode carries no verdict:\n%s", body)
+	}
+}
+
+func TestRenderAddsTheVerdictToAValueChange(t *testing.T) {
+	detected := newVerdictChange(t, change.KindValue, record.ModeExact,
+		"expected exactly [1.2.3.4], got [5.6.7.8]", []string{"5.6.7.8"}, []string{"1.2.3.4"})
+
+	body := appnotification.Render(detected)
+	for _, fragment := range []string{
+		"DNS change detected",
+		"Record : example.com A",
+		"Assert : exact",
+		"Reason : expected exactly [1.2.3.4], got [5.6.7.8]",
+		"Added:",
+		"  + 5.6.7.8",
+		"Removed:",
+		"  - 1.2.3.4",
+	} {
+		if !strings.Contains(body, fragment) {
+			t.Fatalf("the message must mention %q:\n%s", fragment, body)
+		}
+	}
+}
+
+func TestRenderDescribesAViolation(t *testing.T) {
+	detected := newVerdictChange(t, change.KindViolated, record.ModeExact,
+		"expected exactly [1.2.3.4], got [5.6.7.8]", []string{"5.6.7.8"}, []string{"1.2.3.4"})
+
+	body := appnotification.Render(detected)
+	for _, fragment := range []string{
+		"DNS assertion violated",
+		"Record : example.com A",
+		"Assert : exact",
+		"Reason : expected exactly [1.2.3.4], got [5.6.7.8]",
+		"Changes since the last observation:",
+		"  + 5.6.7.8",
+		"  - 1.2.3.4",
+	} {
+		if !strings.Contains(body, fragment) {
+			t.Fatalf("the message must mention %q:\n%s", fragment, body)
+		}
+	}
+}
+
+func TestRenderDescribesARecovery(t *testing.T) {
+	detected := newVerdictChange(t, change.KindRecovered, record.ModeExact,
+		"the answer is exactly the expected set [1.2.3.4]", []string{"1.2.3.4"}, []string{"5.6.7.8"})
+
+	body := appnotification.Render(detected)
+	for _, fragment := range []string{
+		"DNS assertion recovered",
+		"Assert : exact",
+		"Reason : the answer is exactly the expected set [1.2.3.4]",
+		"  + 1.2.3.4",
+		"  - 5.6.7.8",
+	} {
+		if !strings.Contains(body, fragment) {
+			t.Fatalf("the message must mention %q:\n%s", fragment, body)
+		}
+	}
+}
+
+func TestRenderOmitsTheChangesSectionWhenTheDifferenceIsEmpty(t *testing.T) {
+	detected := newVerdictChange(t, change.KindViolated, record.ModeAny,
+		"the record carries no answer", nil, nil)
+
+	body := appnotification.Render(detected)
+	if strings.Contains(body, "Changes since the last observation:") {
+		t.Fatalf("the changes section must be omitted:\n%s", body)
+	}
+	if !strings.Contains(body, "DNS assertion violated") {
+		t.Fatalf("the message must mention the violation:\n%s", body)
+	}
+}
+
+func TestReportDeliversAViolationWithoutAnyDifference(t *testing.T) {
+	now := time.Now().UTC()
+	paired, err := subscriber.New("subscriber-1", "alice", now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	paired, err = paired.Pair(42, -1001, now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	notifier := testsupport.NewNotifier()
+	service := appnotification.New(testsupport.NewSubscribers(paired), testsupport.NewChanges(),
+		notifier, shared.SystemClock{}, nil)
+
+	detected := newVerdictChange(t, change.KindViolated, record.ModeAny,
+		"the record carries no answer", nil, nil)
+
+	if err := service.Report(context.Background(), detected); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if notifier.Delivered() != 1 {
+		t.Fatalf("expected one delivery, got %d", notifier.Delivered())
+	}
+}

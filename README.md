@@ -131,6 +131,77 @@ others are not tried as a fallback.
 The file is read when the daemon starts, so a change to it needs a restart
 of the daemon to take effect.
 
+#### Check modes
+
+A record can also declare **how** it is checked. The mode decides what the
+monitor compares the answer against, and every mode keeps watching the
+differences: the change detection is not replaced by the declared modes, it is
+one of them.
+
+| Mode | Compared against | Answers |
+| --- | --- | --- |
+| `change` | The previous observation | "did the answer change?" |
+| `any` | Nothing, only the existence | "does the record still exist?" |
+| `exact` | A declared set of values | "is the answer exactly the expected one?" |
+| `regex` | A declared pattern | "does an answer still match the pattern?" |
+
+`change` is the default. A record that declares nothing keeps the behaviour of
+the monitor before the check modes existed, and the mode carries no value to
+check against.
+
+```toml
+# The default: the record is watched for changes.
+[[monitor.records]]
+name = "example.com"
+type = "A"
+
+# The answer must be exactly this one.
+[[monitor.records]]
+name = "example.com"
+type = "A"
+mode = "exact"
+expect = ["1.2.3.4"]
+
+# At least one answer must match the pattern.
+[[monitor.records]]
+name = "example.com"
+type = "TXT"
+mode = "regex"
+expect = ["^v=spf1"]
+
+# The record must exist.
+[[monitor.records]]
+name = "example.com"
+type = "NS"
+mode = "any"
+```
+
+The regular expressions are the ones of Go, that is, RE2: there are no
+backreferences and no lookaround. The pattern is **searched** anywhere in the
+answer, like `regexp.MatchString` does, so anchor it with `^` and `$` when the
+answer must match it entirely.
+
+The expectations are validated while the configuration file is read, so a
+broken declaration never reaches the database. The rules are the same on the
+command line: `change` and `any` take no value, `exact` needs at least one,
+and `regex` needs exactly one valid pattern.
+
+**One record carries one mode.** A record cannot be watched for changes and
+checked against an expectation at the same time. The workaround is to declare
+the same name twice with two different resolvers, since the identity of a
+record is `name|type|resolver` and the two rows are independent.
+
+A violation is reported on the very first observation, even when
+`monitor.notify_on_baseline` is false: a declared expectation is a statement
+of intent, not a comparison against a previous observation, so it is meaningful
+without a baseline. A record that keeps violating its expectation is not
+reported again and again, but the log keeps saying that it is still violating
+it.
+
+The difference between two observations is always computed and always
+reported, in every mode. The declared modes only add the verdict of the
+expectation to the report, they never silence it.
+
 **From the command line**, which is the quick way:
 
 ```bash
@@ -140,17 +211,24 @@ the record example.com A is now monitored
 $ dnsmon records add example.com AAAA --resolver 9.9.9.9:53
 the record example.com AAAA is now monitored
 
+$ dnsmon records add example.com TXT --mode regex --expect '^v=spf1'
+the record example.com TXT is now monitored
+
 $ dnsmon records list
-NAME                                     TYPE     RESOLVER               STATE      SOURCE
-example.com                             A        1.1.1.1:53             active     manual
+NAME                                     TYPE     RESOLVER               STATE      MODE                      SOURCE
+example.com                             A        1.1.1.1:53             active     change                    manual
+example.com                             TXT      1.1.1.1:53             active     regex [^v=spf1]           manual
 
 $ dnsmon records remove example.com A
 the record example.com A is no longer monitored
 ```
 
 The type may be given positionally or with `--type`, and it defaults to `A`.
-These records are read by the next sweep, so they take effect without
-restarting the daemon.
+The check mode is given with `--mode` and defaults to `change`; the expected
+values are given with `--expect`, which can be repeated. The rules are the
+same as the ones of the configuration file: `change` and `any` take no value,
+`exact` needs at least one and `regex` needs exactly one. These records are
+read by the next sweep, so they take effect without restarting the daemon.
 
 Both ways end up in the same table, `dns_targets`. The `SOURCE` column of
 `dnsmon records list` tells which is which: `config` for the records coming
@@ -182,7 +260,13 @@ $ dnsmon sync
 $ dnsmon check
 *.devteam.omnicanal.pe                   A      190.105.240.58 (first observation)
 bots.omniatel.omnicanal.pe               A      (no answer) (first observation)
+example.com                              A      5.6.7.8 (changed, exact violated: expected exactly [1.2.3.4], got [5.6.7.8])
+example.org                              A      1.2.3.4 (unchanged, exact satisfied)
 ```
+
+A record declaring an expectation shows its verdict next to the state of the
+answer, and `dnsmon check` exits with a non zero status when an expectation is
+violated, naming the number of violated expectations.
 
 ### 4. Pair the accounts
 
@@ -230,7 +314,7 @@ $ dnsmon stop                # stop the background daemon
 | `dnsmon token create [--ttl <minutes>]` | Mint a pairing token |
 | `dnsmon token list` | List the pairing tokens and their state |
 | `dnsmon records list` | List the monitored records |
-| `dnsmon records add <name> [type] [--resolver <host:port>]` | Watch a record |
+| `dnsmon records add <name> [type] [--resolver <host:port>] [--mode <mode>] [--expect <value>]` | Watch a record |
 | `dnsmon records remove <name> [type]` | Stop watching a record |
 | `dnsmon subscribers list` | List the accounts allowed to receive the reports |
 | `dnsmon subscribers remove <username>` | Remove an account |
@@ -255,6 +339,8 @@ the command.
 | `monitor.records` | `type` | - | `A`, `AAAA`, `CNAME`, `TXT`, `NS`, `MX`, `PTR` or `SOA` |
 | `monitor.records` | `resolver` | - | Name server used for this record |
 | `monitor.records` | `enabled` | `true` | Watch the record without removing it from the file |
+| `monitor.records` | `mode` | `change` | How the record is checked: `change`, `any`, `exact` or `regex` |
+| `monitor.records` | `expect` | - | The expected values, one for `regex` and at least one for `exact` |
 | `pairing` | `token_ttl_minutes` | `30` | Lifetime of a pairing token |
 | `daemon` | `pid_file` | next to the database | Where the process identifier is written |
 | `daemon` | `log_file` | next to the database | Where the background daemon writes its output |
@@ -326,11 +412,20 @@ Everything is kept in a single SQLite file, with the following tables:
 
 | Table | Content |
 | --- | --- |
-| `dns_targets` | The watched records and their state |
-| `dns_snapshots` | The last answer of every record |
-| `dns_changes` | The detected differences and the moment they were reported |
+| `dns_targets` | The watched records and their state, including their check mode and expectation |
+| `dns_snapshots` | The last answer of every record, with the verdict of its expectation |
+| `dns_changes` | The detected differences, with their kind, and the moment they were reported |
 | `subscribers` | The accounts allowed to receive the reports |
 | `pairing_tokens` | The authorization tokens and their state |
+
+The check mode of a record lives in `dns_targets.check_mode` and its expected
+values in `dns_targets.check_expect`. The verdict of the last observation
+lives in `dns_snapshots.satisfied`, with its explanation in
+`dns_snapshots.reason`. Every detected difference records what produced it in
+`dns_changes.kind` (`value`, `violated` or `recovered`), the mode it was
+detected in `dns_changes.mode`, and the explanation of the verdict in
+`dns_changes.assert_reason`. The rows created before the check modes existed
+read back as value changes.
 
 ## Development
 

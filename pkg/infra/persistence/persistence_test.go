@@ -258,3 +258,155 @@ func containsText(haystack, needle string) bool {
 	}
 	return false
 }
+
+func TestTargetRoundTripKeepsTheCheckDeclaration(t *testing.T) {
+	repositories := newRepositories(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	target, err := record.NewTarget("example.com", record.TypeTXT, "1.1.1.1:53", record.SourceConfig, now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	target.ID = "target-1"
+	target.Check = record.Check{Mode: record.ModeRegex, Expect: []string{"^v=spf1"}}
+
+	if err := repositories.Targets.Upsert(ctx, target); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	stored, err := repositories.Targets.Get(ctx, "target-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stored.Check.Mode != record.ModeRegex {
+		t.Fatalf("unexpected mode: %q", stored.Check.Mode)
+	}
+	if len(stored.Check.Expect) != 1 || stored.Check.Expect[0] != "^v=spf1" {
+		t.Fatalf("unexpected expectation: %v", stored.Check.Expect)
+	}
+}
+
+func TestTargetRoundTripDefaultsToTheChangeMode(t *testing.T) {
+	repositories := newRepositories(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	target, err := record.NewTarget("example.com", record.TypeA, "1.1.1.1:53", record.SourceConfig, now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	target.ID = "target-1"
+
+	if err := repositories.Targets.Upsert(ctx, target); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	stored, err := repositories.Targets.Get(ctx, "target-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stored.Check.Mode != record.ModeChange {
+		t.Fatalf("unexpected mode: %q", stored.Check.Mode)
+	}
+	if stored.Check.IsDeclared() {
+		t.Fatal("a target without a declaration is watched for changes")
+	}
+}
+
+func TestSnapshotRoundTripKeepsTheVerdict(t *testing.T) {
+	repositories := newRepositories(t)
+	ctx := context.Background()
+
+	satisfied := false
+	snapshot := record.Snapshot{
+		ID:         "snapshot-1",
+		TargetID:   "target-1",
+		Values:     []string{"5.6.7.8"},
+		ObservedAt: time.Now().UTC(),
+		Satisfied:  &satisfied,
+		Reason:     "expected exactly [1.2.3.4], got [5.6.7.8]",
+	}
+	if err := repositories.Snapshots.Save(ctx, snapshot); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	stored, err := repositories.Snapshots.Latest(ctx, "target-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stored.Satisfied == nil {
+		t.Fatal("the snapshot must carry the verdict")
+	}
+	if *stored.Satisfied {
+		t.Fatal("the verdict must be stored as it was observed")
+	}
+	if stored.Reason != "expected exactly [1.2.3.4], got [5.6.7.8]" {
+		t.Fatalf("unexpected reason: %q", stored.Reason)
+	}
+}
+
+func TestChangeRoundTripKeepsTheKindAndTheVerdict(t *testing.T) {
+	repositories := newRepositories(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	detected, err := change.NewVerdict("change-1", record.Target{
+		ID:   "target-1",
+		Name: "example.com",
+		Type: record.TypeA,
+	}, []string{"5.6.7.8"}, []string{"1.2.3.4"}, change.KindViolated, record.ModeExact,
+		"expected exactly [1.2.3.4], got [5.6.7.8]", now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := repositories.Changes.Save(ctx, detected); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	pending, err := repositories.Changes.ListPending(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending change, got %d", len(pending))
+	}
+	if pending[0].Kind != change.KindViolated {
+		t.Fatalf("unexpected kind: %q", pending[0].Kind)
+	}
+	if pending[0].Mode != record.ModeExact {
+		t.Fatalf("unexpected mode: %q", pending[0].Mode)
+	}
+	if pending[0].Reason != "expected exactly [1.2.3.4], got [5.6.7.8]" {
+		t.Fatalf("unexpected reason: %q", pending[0].Reason)
+	}
+}
+
+func TestChangeRoundTripKeepsTheValueKindOfTheOldRows(t *testing.T) {
+	repositories := newRepositories(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	detected, err := change.New("change-1", record.Target{
+		ID:   "target-1",
+		Name: "example.com",
+		Type: record.TypeA,
+	}, []string{"2.2.2.2"}, []string{"1.1.1.1"}, now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := repositories.Changes.Save(ctx, detected); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	pending, err := repositories.Changes.ListPending(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending change, got %d", len(pending))
+	}
+	if pending[0].Kind != change.KindValue {
+		t.Fatalf("unexpected kind: %q", pending[0].Kind)
+	}
+}

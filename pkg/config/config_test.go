@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aognio/dns-change-monitor/pkg/config"
@@ -136,6 +137,120 @@ type = "WAT"
 
 	if _, err := config.Load(path); err == nil {
 		t.Fatal("expected an error for an unknown record type")
+	}
+}
+
+func TestLoadReadsTheCheckDeclaration(t *testing.T) {
+	path := writeConfig(t, `
+[telegram]
+token = "123456:secret"
+
+[[monitor.records]]
+name = "example.com"
+type = "A"
+mode = "exact"
+expect = ["1.2.3.4", "5.6.7.8"]
+
+[[monitor.records]]
+name = "example.org"
+type = "TXT"
+mode = "regex"
+expect = ["^v=spf1"]
+
+[[monitor.records]]
+name = "example.net"
+type = "NS"
+mode = "any"
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Monitor.Records) != 3 {
+		t.Fatalf("unexpected records: %+v", cfg.Monitor.Records)
+	}
+	first := cfg.Monitor.Records[0]
+	if first.Mode != "exact" {
+		t.Fatalf("unexpected mode: %q", first.Mode)
+	}
+	if len(first.Expect) != 2 || first.Expect[0] != "1.2.3.4" {
+		t.Fatalf("unexpected expectation: %v", first.Expect)
+	}
+	if cfg.Monitor.Records[1].Mode != "regex" {
+		t.Fatalf("unexpected mode: %q", cfg.Monitor.Records[1].Mode)
+	}
+	if cfg.Monitor.Records[2].Mode != "any" {
+		t.Fatalf("unexpected mode: %q", cfg.Monitor.Records[2].Mode)
+	}
+}
+
+func TestLoadRejectsTheInvalidCheckDeclarations(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"expect without a mode", `
+mode = ""
+expect = ["1.2.3.4"]`},
+		{"expect with the change mode", `
+mode = "change"
+expect = ["1.2.3.4"]`},
+		{"an unknown mode", `
+mode = "sometimes"`},
+		{"exact without an expectation", `
+mode = "exact"`},
+		{"regex without an expectation", `
+mode = "regex"`},
+		{"regex with two expectations", `
+mode = "regex"
+expect = ["a", "b"]`},
+		{"regex with an invalid pattern", `
+mode = "regex"
+expect = ["([a-z"]`},
+		{"any with an expectation", `
+mode = "any"
+expect = ["1.2.3.4"]`},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			path := writeConfig(t, `
+[telegram]
+token = "123456:secret"
+
+[[monitor.records]]
+name = "example.com"
+type = "A"`+testCase.body+`
+`)
+			if _, err := config.Load(path); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
+func TestLoadNamesTheOffendingRecord(t *testing.T) {
+	path := writeConfig(t, `
+[telegram]
+token = "123456:secret"
+
+[[monitor.records]]
+name = "example.com"
+type = "A"
+
+[[monitor.records]]
+name = "example.org"
+type = "A"
+mode = "exact"
+`)
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "monitor.records[1]") {
+		t.Fatalf("the error must name the offending record: %v", err)
 	}
 }
 

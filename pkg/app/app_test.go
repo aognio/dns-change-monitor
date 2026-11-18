@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/aognio/dns-change-monitor/pkg/app"
 	"github.com/aognio/dns-change-monitor/pkg/config"
 	"github.com/aognio/dns-change-monitor/pkg/domain/notification"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
 	"github.com/aognio/dns-change-monitor/pkg/domain/subscriber"
 	domaintelegram "github.com/aognio/dns-change-monitor/pkg/domain/telegram"
 	"github.com/aognio/dns-change-monitor/pkg/testsupport"
@@ -192,3 +194,176 @@ var (
 	_ domaintelegram.Gateway = (*gateway)(nil)
 	_ notification.Notifier  = (*testsupport.Notifier)(nil)
 )
+
+// writeCheckedConfiguration writes a configuration file declaring one record
+// with the given check mode and expectation.
+func writeCheckedConfiguration(t *testing.T, directory string, mode string, expect []string) string {
+	t.Helper()
+	expectation := ""
+	if len(expect) > 0 {
+		values := make([]string, 0, len(expect))
+		for _, value := range expect {
+			values = append(values, `"`+value+`"`)
+		}
+		expectation = "\nexpect = [" + strings.Join(values, ", ") + "]"
+	}
+	content := `
+[database]
+path = "` + filepath.Join(directory, "dnsmon.db") + `"
+
+[telegram]
+token = "123456:test"
+
+[monitor]
+interval_seconds = 1
+resolvers = ["127.0.0.1:5353"]
+
+[[monitor.records]]
+name = "example.com"
+type = "A"
+mode = "` + mode + `"` + expectation + `
+`
+	path := filepath.Join(directory, "config.toml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return path
+}
+
+func openApplication(t *testing.T, configPath string) *app.App {
+	t.Helper()
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	application, err := app.Open(cfg, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = application.Close() })
+	return application
+}
+
+func TestSeedAppliesTheCheckDeclaredInTheConfigurationFile(t *testing.T) {
+	directory := t.TempDir()
+	application := openApplication(t, writeCheckedConfiguration(t, directory, "exact", []string{"1.2.3.4"}))
+
+	ctx := context.Background()
+	if err := application.Seed(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	targets, err := application.Repositories().Targets.List(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("expected one target, got %d", len(targets))
+	}
+	if targets[0].Check.Mode != record.ModeExact {
+		t.Fatalf("unexpected mode: %q", targets[0].Check.Mode)
+	}
+	if len(targets[0].Check.Expect) != 1 || targets[0].Check.Expect[0] != "1.2.3.4" {
+		t.Fatalf("unexpected expectation: %v", targets[0].Check.Expect)
+	}
+}
+
+func TestSeedUpdatesTheModeOfAnExistingTarget(t *testing.T) {
+	directory := t.TempDir()
+	application := openApplication(t, writeCheckedConfiguration(t, directory, "exact", []string{"1.2.3.4"}))
+
+	ctx := context.Background()
+	if err := application.Seed(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	before, err := application.Repositories().Targets.List(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The configuration file changes the mode of the record.
+	application2 := openApplication(t, writeCheckedConfiguration(t, directory, "any", nil))
+	if err := application2.Seed(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	after, err := application2.Repositories().Targets.List(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(after) != 1 {
+		t.Fatalf("expected one target, got %d", len(after))
+	}
+	if after[0].ID != before[0].ID {
+		t.Fatalf("the target must keep its identifier, got %q", after[0].ID)
+	}
+	if after[0].Check.Mode != record.ModeAny {
+		t.Fatalf("unexpected mode: %q", after[0].Check.Mode)
+	}
+}
+
+func TestCheckReportsTheVerdictOfTheExpectation(t *testing.T) {
+	directory := t.TempDir()
+	application := openApplication(t, writeCheckedConfiguration(t, directory, "exact", []string{"1.2.3.4"}))
+
+	ctx := context.Background()
+	if err := application.Seed(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	targets, err := application.Repositories().Targets.List(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resolver := testsupport.NewResolver()
+	resolver.SetAnswer(targets[0].Identity(), "5.6.7.8")
+	application.SetResolver(resolver)
+
+	results, err := application.Check(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected one result, got %d", len(results))
+	}
+	if results[0].Satisfied {
+		t.Fatal("the expectation is violated")
+	}
+	if results[0].Reason == "" {
+		t.Fatal("the result must carry the reason of the verdict")
+	}
+	verdict := results[0].Verdict()
+	if !strings.Contains(verdict, "exact violated") {
+		t.Fatalf("unexpected verdict: %q", verdict)
+	}
+}
+
+func TestCheckReportsASatisfiedExpectation(t *testing.T) {
+	directory := t.TempDir()
+	application := openApplication(t, writeCheckedConfiguration(t, directory, "exact", []string{"1.2.3.4"}))
+
+	ctx := context.Background()
+	if err := application.Seed(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	targets, err := application.Repositories().Targets.List(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resolver := testsupport.NewResolver()
+	resolver.SetAnswer(targets[0].Identity(), "1.2.3.4")
+	application.SetResolver(resolver)
+
+	results, err := application.Check(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !results[0].Satisfied {
+		t.Fatal("the expectation is satisfied")
+	}
+	if !strings.Contains(results[0].Verdict(), "exact satisfied") {
+		t.Fatalf("unexpected verdict: %q", results[0].Verdict())
+	}
+}

@@ -37,17 +37,41 @@ notify_on_baseline = false
 
 # The records to watch. They are reconciled with the database at every
 # start: a record removed from this file stops being watched.
+#
+# A record may also declare how it is checked, with the mode key:
+#
+#   change  the default, the answer is compared with the previous
+#           observation and there is no value to check against
+#   any     the record must carry at least one answer
+#   exact   the answer must be exactly the listed values
+#   regex   at least one answer must match the listed pattern, which is a
+#           Go regular expression (RE2) searched anywhere in the answer
+#
+# The expectations are validated while this file is read, so a broken
+# declaration never reaches the database.
 [[monitor.records]]
 name = "example.com"
 type = "A"
 
-[[monitor.records]]
-name = "example.com"
-type = "AAAA"
+# The answer must be exactly 1.2.3.4.
+#[[monitor.records]]
+#name = "example.com"
+#type = "A"
+#mode = "exact"
+#expect = ["1.2.3.4"]
 
-[[monitor.records]]
-name = "example.com"
-type = "TXT"
+# At least one answer must match the pattern.
+#[[monitor.records]]
+#name = "example.com"
+#type = "TXT"
+#mode = "regex"
+#expect = ["^v=spf1"]
+
+# The record must exist.
+#[[monitor.records]]
+#name = "example.com"
+#type = "NS"
+#mode = "any"
 
 [pairing]
 # How long a pairing token stays redeemable.
