@@ -102,7 +102,8 @@ func (a *Agent) handle(ctx context.Context, command domaintelegram.Command) {
 // handleStart redeems the pairing token carried by the command.
 func (a *Agent) handleStart(ctx context.Context, command domaintelegram.Command) {
 	if strings.TrimSpace(command.Payload) == "" {
-		a.reply(ctx, command, "Send the pairing token with the command:\n/start <token>")
+		a.reply(ctx, command, "The bot is running and answers to commands.\n"+
+			"Send the pairing token with the command:\n/start <token>")
 		return
 	}
 

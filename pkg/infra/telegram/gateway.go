@@ -4,8 +4,10 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,9 +20,15 @@ import (
 
 // Gateway consumes updates from Telegram and exposes them as commands.
 type Gateway struct {
-	bot    *telebot.Bot
-	logger *slog.Logger
-	once   sync.Once
+	bot     *telebot.Bot
+	logger  *slog.Logger
+	timeout time.Duration
+	backoff time.Duration
+
+	startOnce sync.Once
+	stopOnce  sync.Once
+	stop      chan struct{}
+	commands  chan domaintelegram.Command
 }
 
 // Options configure the gateway.
@@ -29,6 +37,9 @@ type Options struct {
 	Token string
 	// PollTimeout is how long a long poll request waits for updates.
 	PollTimeout time.Duration
+	// APIURL overrides the address of the Telegram API. It is empty in
+	// production and points at a local server in the tests.
+	APIURL string
 	// Logger receives the diagnostics of the adapter.
 	Logger *slog.Logger
 }
@@ -48,8 +59,11 @@ func New(options Options) (*Gateway, error) {
 	}
 
 	bot, err := telebot.NewBot(telebot.Settings{
-		Token:  options.Token,
-		Poller: &telebot.LongPoller{Timeout: timeout},
+		Token: options.Token,
+		URL:   options.APIURL,
+		// The client outlives a single long poll, so its deadline is the
+		// poll timeout plus the time the answer may take to travel back.
+		Client: &http.Client{Timeout: timeout + 30*time.Second},
 		OnError: func(err error, _ telebot.Context) {
 			logger.Error("telegram update failed", slog.String("error", err.Error()))
 		},
@@ -57,48 +71,154 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to telegram: %w", err)
 	}
-	return &Gateway{bot: bot, logger: logger}, nil
+	return &Gateway{
+		bot:      bot,
+		logger:   logger,
+		timeout:  timeout,
+		backoff:  5 * time.Second,
+		stop:     make(chan struct{}),
+		commands: make(chan domaintelegram.Command, 64),
+	}, nil
 }
 
 // Listen implements telegram.Gateway.
+//
+// The polling of the Telegram API starts once and runs in the background for
+// the whole life of the gateway. Every call returns its own stream of
+// commands, closed when the context is cancelled.
 func (g *Gateway) Listen(ctx context.Context) (<-chan domaintelegram.Command, error) {
-	g.once.Do(func() { g.bot.Start() })
+	g.startOnce.Do(func() { go g.poll() })
 
-	commands := make(chan domaintelegram.Command, 32)
+	outgoing := make(chan domaintelegram.Command, 16)
 	go func() {
-		defer close(commands)
+		defer close(outgoing)
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case update, ok := <-g.bot.Updates:
+			case <-g.stop:
+				return
+			case command, ok := <-g.commands:
 				if !ok {
 					return
 				}
-				command, ok := toCommand(update)
-				if !ok {
-					continue
-				}
 				select {
-				case commands <- command:
+				case outgoing <- command:
 				case <-ctx.Done():
+					return
+				case <-g.stop:
 					return
 				}
 			}
 		}
 	}()
-	return commands, nil
+	return outgoing, nil
 }
 
-// Stop shuts the bot down.
+// Stop shuts the polling down.
 func (g *Gateway) Stop() {
-	g.bot.Stop()
+	g.stopOnce.Do(func() { close(g.stop) })
+}
+
+// poll asks the Telegram API for the updates until the gateway is stopped.
+func (g *Gateway) poll() {
+	offset := 0
+	for {
+		select {
+		case <-g.stop:
+			return
+		default:
+		}
+
+		updates, err := g.fetch(offset)
+		if err != nil {
+			select {
+			case <-g.stop:
+				return
+			default:
+			}
+			g.logger.Error("telegram poll failed", slog.String("error", err.Error()))
+			select {
+			case <-g.stop:
+				return
+			case <-time.After(g.backoff):
+			}
+			continue
+		}
+
+		for _, update := range updates {
+			if update.ID >= offset {
+				offset = update.ID + 1
+			}
+			command, ok := g.command(update)
+			if !ok {
+				continue
+			}
+			select {
+			case g.commands <- command:
+			case <-g.stop:
+				return
+			}
+		}
+	}
+}
+
+// fetch asks the Telegram API for the updates that come after the given one.
+func (g *Gateway) fetch(offset int) ([]telebot.Update, error) {
+	params := map[string]any{
+		"offset":          offset,
+		"timeout":         int(g.timeout.Seconds()),
+		"allowed_updates": []string{"message"},
+	}
+	data, err := g.bot.Raw("getUpdates", params)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Result []telebot.Update
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, fmt.Errorf("decode telegram updates: %w", err)
+	}
+	return response.Result, nil
+}
+
+// command turns an update into a domain command, discarding the ones that
+// are not meant for this bot.
+func (g *Gateway) command(update telebot.Update) (domaintelegram.Command, bool) {
+	message := update.Message
+	if message == nil || message.Chat == nil {
+		return domaintelegram.Command{}, false
+	}
+	if addressedToAnotherBot(message, g.bot) {
+		return domaintelegram.Command{}, false
+	}
+	return toCommand(update)
+}
+
+// addressedToAnotherBot reports whether the message names a bot other than
+// this one.
+func addressedToAnotherBot(message *telebot.Message, bot *telebot.Bot) bool {
+	fields := strings.Fields(message.Text)
+	if len(fields) == 0 {
+		return false
+	}
+	verb := strings.TrimPrefix(fields[0], "/")
+	index := strings.Index(verb, "@")
+	if index < 0 {
+		return false
+	}
+	name := verb[index+1:]
+	if bot == nil || bot.Me == nil || bot.Me.Username == "" {
+		return false
+	}
+	return !strings.EqualFold(name, bot.Me.Username)
 }
 
 // toCommand converts a Telegram update into a domain command.
 func toCommand(update telebot.Update) (domaintelegram.Command, bool) {
 	message := update.Message
-	if message == nil || message.Text == "" {
+	if message == nil || message.Chat == nil || message.Text == "" {
 		return domaintelegram.Command{}, false
 	}
 	if !strings.HasPrefix(message.Text, "/") {
