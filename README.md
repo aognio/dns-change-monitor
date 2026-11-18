@@ -331,6 +331,39 @@ The test suite covers the domain rules, the use cases, the storage, the
 resolver against a name server started by the test, the daemonization and
 the whole path from a pairing token to a delivered report.
 
+## Running under systemd
+
+The unit file lives in `deploy/systemd/dnsmon.service`. It runs the monitor
+in the foreground, so systemd owns the process and the logs go to the
+journal.
+
+```bash
+sudo make install-systemd
+sudoedit /etc/dnsmon/dnsmon.env      # DNSMON_TELEGRAM_TOKEN=...
+sudoedit /etc/dnsmon/config.toml      # the records to watch
+sudo systemctl enable --now dnsmon
+sudo journalctl -u dnsmon -f
+```
+
+The installation writes:
+
+| File | Purpose |
+| --- | --- |
+| `/usr/local/bin/dnsmon` | The binary |
+| `/etc/systemd/system/dnsmon.service` | The unit |
+| `/etc/dnsmon/dnsmon.env` | The bot token, readable only by root |
+| `/etc/dnsmon/config.toml` | The configuration |
+
+The database lives in `/var/lib/dnsmon/dnsmon.db`, a directory that systemd
+creates and hands over to the service. The unit runs with a temporary
+identity, so no account has to exist on the machine, and it restricts the
+filesystem to what the monitor needs: it reads its configuration, writes its
+database and reaches the name servers and the Telegram API.
+
+Because systemd supervises the process, the commands that manage the
+background daemon are not used in this setup. `systemctl stop dnsmon` takes
+the place of `dnsmon stop`.
+
 ## License
 
 MIT License - Copyright (c) 2026 Antonio Ognio

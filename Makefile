@@ -155,6 +155,21 @@ install: $(TARGET) ## Install the binary into PREFIX/bin
 uninstall: ## Remove the installed binary
 	$(Q)rm -f $(DESTDIR)$(BINDIR)/$(BINARY)
 
+.PHONY: install-systemd
+install-systemd: $(TARGET) ## Install the binary and the systemd unit (needs root)
+	$(Q)install -D -m 0755 $(TARGET) /usr/local/bin/$(BINARY)
+	$(Q)install -D -m 0644 deploy/systemd/dnsmon.service /etc/systemd/system/dnsmon.service
+	$(Q)install -D -m 0600 deploy/systemd/dnsmon.env.example /etc/dnsmon/dnsmon.env
+	$(Q)install -D -m 0644 deploy/systemd/config.toml.example /etc/dnsmon/config.toml
+	$(Q)systemctl daemon-reload
+	$(Q)echo "edit /etc/dnsmon/dnsmon.env and /etc/dnsmon/config.toml, then run: systemctl enable --now dnsmon"
+
+.PHONY: uninstall-systemd
+uninstall-systemd: ## Remove the systemd unit and the installed binary (needs root)
+	$(Q)systemctl disable --now dnsmon 2>/dev/null || true
+	$(Q)rm -f /etc/systemd/system/dnsmon.service /usr/local/bin/$(BINARY)
+	$(Q)systemctl daemon-reload
+
 ##@ Housekeeping
 
 .PHONY: clean
