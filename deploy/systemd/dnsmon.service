@@ -1,0 +1,50 @@
+[Unit]
+Description=DNS change monitor with Telegram notifications
+Documentation=https://github.com/gnrfan/dns-change-monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dnsmon run --config /etc/dnsmon/config.toml
+
+# The bot token is kept out of the configuration file. The file is optional:
+# when it is missing the token has to be in the configuration file itself.
+EnvironmentFile=-/etc/dnsmon/dnsmon.env
+
+# The identity of the process is temporary. The state directory is created
+# and handed over by systemd, so no account has to exist on the machine.
+DynamicUser=yes
+StateDirectory=dnsmon
+UMask=0077
+
+# systemd owns the lifecycle. The monitor runs in the foreground and is
+# stopped with SIGTERM, which it handles by ending the agents and closing
+# the database.
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+
+# The monitor only reads its configuration and writes its database. The
+# state directory stays writable even with the rest of the filesystem
+# locked down.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

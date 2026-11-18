@@ -1,0 +1,47 @@
+# Configuration of the DNS change monitor when it runs under systemd.
+#
+# The file is read by /etc/systemd/system/dnsmon.service. The token of the
+# bot is not written here: it is read from the environment file
+# /etc/dnsmon/dnsmon.env, in the variable DNSMON_TELEGRAM_TOKEN.
+
+[database]
+# The absolute location of the SQLite file. The service declares
+# StateDirectory=dnsmon, so systemd creates /var/lib/dnsmon and lets the
+# service write in it.
+path = "/var/lib/dnsmon/dnsmon.db"
+
+[telegram]
+# The accounts allowed to pair with the bot and to receive the reports.
+notify_usernames = ["alice"]
+
+# How long a long poll request waits for new updates.
+poll_timeout_seconds = 30
+
+[monitor]
+# The delay between two consecutive checks of the monitored records.
+interval_seconds = 60
+
+# The name servers used by the records that do not name one.
+resolvers = ["1.1.1.1:53", "8.8.8.8:53"]
+
+# The timeout of a single query.
+timeout_seconds = 5
+
+# Whether the first observation of a record is reported.
+notify_on_baseline = false
+
+# The records to watch. They are reconciled with the database at every start:
+# a record removed from this file stops being watched.
+[[monitor.records]]
+name = "example.com"
+type = "A"
+
+[pairing]
+# How long a pairing token stays redeemable.
+token_ttl_minutes = 30
+
+[log]
+# One of debug, info, warn or error.
+level = "info"
+# One of text or json.
+format = "text"
