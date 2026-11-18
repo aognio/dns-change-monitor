@@ -59,6 +59,9 @@ type Target struct {
 	Source    string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// Check is the way the target is checked. The zero value means it is
+	// watched for changes only.
+	Check Check
 }
 
 // Sources describe where a target came from, so that targets declared in the
@@ -118,6 +121,11 @@ type Snapshot struct {
 	Values     []string
 	TTL        time.Duration
 	ObservedAt time.Time
+	// Satisfied is the verdict of the check at the moment of the
+	// observation. It is nil when the target is watched for changes only.
+	Satisfied *bool
+	// Reason explains the verdict.
+	Reason string
 }
 
 // Resolution is the outcome of asking a DNS server about a target.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 
 	"github.com/aognio/dns-change-monitor/pkg/app"
 	"github.com/aognio/dns-change-monitor/pkg/config"
@@ -67,7 +68,7 @@ func listRecords(args []string) error {
 		return nil
 	}
 
-	fmt.Printf("%-40s %-8s %-22s %-10s %s\n", "NAME", "TYPE", "RESOLVER", "STATE", "SOURCE")
+	fmt.Printf("%-40s %-8s %-22s %-10s %-24s %s\n", "NAME", "TYPE", "RESOLVER", "STATE", "MODE", "SOURCE")
 	for _, target := range targets {
 		state := "paused"
 		if target.Enabled {
@@ -77,10 +78,19 @@ func listRecords(args []string) error {
 		if resolver == "" {
 			resolver = "(default)"
 		}
-		fmt.Printf("%-40s %-8s %-22s %-10s %s\n",
-			target.Name, target.Type, resolver, state, target.Source)
+		fmt.Printf("%-40s %-8s %-22s %-10s %-24s %s\n",
+			target.Name, target.Type, resolver, state, describeMode(target.Check), target.Source)
 	}
 	return nil
+}
+
+// describeMode renders the check mode of a target with its expectation.
+func describeMode(check record.Check) string {
+	mode := string(check.EffectiveMode())
+	if len(check.Expect) == 0 {
+		return mode
+	}
+	return mode + " [" + strings.Join(check.Expect, ", ") + "]"
 }
 
 // addRecord adds a monitored DNS name.
@@ -88,12 +98,15 @@ func addRecord(args []string) error {
 	flags := flag.NewFlagSet("records add", flag.ContinueOnError)
 	resolver := flags.String("resolver", "", "DNS server to query, as host:port")
 	recordType := flags.String("type", "A", "record type to monitor")
+	mode := flags.String("mode", "change", "check mode: change, any, exact or regex")
+	expect := &stringList{}
+	flags.Var(expect, "expect", "expected value, repeatable")
 	configFile := flags.String("config", "", "path of the configuration file")
 	if err := flags.Parse(reorderArgs(flags, args)); err != nil {
 		return err
 	}
 	if flags.NArg() < 1 || flags.NArg() > 2 {
-		return fmt.Errorf("usage: dnsmon records add <name> [type] [--resolver host:port]")
+		return fmt.Errorf("usage: dnsmon records add <name> [type] [--resolver host:port] [--mode mode] [--expect value]")
 	}
 
 	path := *configFile
@@ -137,6 +150,12 @@ func addRecord(args []string) error {
 		return err
 	}
 	target.ID = application.IDs().NewID()
+
+	check, err := record.NewCheck(record.Mode(*mode), expect.values)
+	if err != nil {
+		return err
+	}
+	target.Check = check
 
 	existing, err := application.Repositories().Targets.List(ctx)
 	if err != nil {
@@ -219,4 +238,23 @@ func removeRecord(args []string) error {
 		}
 	}
 	return fmt.Errorf("the record %s %s is not monitored", name, parsedType)
+}
+
+// stringList collects the values of a repeatable flag.
+type stringList struct {
+	values []string
+}
+
+// String implements flag.Value.
+func (l *stringList) String() string {
+	if l == nil {
+		return ""
+	}
+	return strings.Join(l.values, ",")
+}
+
+// Set implements flag.Value.
+func (l *stringList) Set(value string) error {
+	l.values = append(l.values, value)
+	return nil
 }

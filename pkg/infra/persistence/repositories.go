@@ -75,6 +75,8 @@ func (r *TargetRepository) Upsert(ctx context.Context, target record.Target) err
 	case err == nil:
 		model.Enabled = target.Enabled
 		model.Source = target.Source
+		model.CheckMode = string(target.Check.EffectiveMode())
+		model.CheckExpect = StringList(target.Check.Expect)
 		model.UpdatedAt = target.UpdatedAt
 		if err := r.db.WithContext(ctx).Save(&model).Error; err != nil {
 			return fmt.Errorf("update target: %w", err)
@@ -82,14 +84,16 @@ func (r *TargetRepository) Upsert(ctx context.Context, target record.Target) err
 		return nil
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		model = TargetModel{
-			ID:         target.ID,
-			Name:       target.Name,
-			RecordType: string(target.Type),
-			Resolver:   target.Resolver,
-			Enabled:    target.Enabled,
-			Source:     target.Source,
-			CreatedAt:  target.CreatedAt,
-			UpdatedAt:  target.UpdatedAt,
+			ID:          target.ID,
+			Name:        target.Name,
+			RecordType:  string(target.Type),
+			Resolver:    target.Resolver,
+			Enabled:     target.Enabled,
+			Source:      target.Source,
+			CheckMode:   string(target.Check.EffectiveMode()),
+			CheckExpect: StringList(target.Check.Expect),
+			CreatedAt:   target.CreatedAt,
+			UpdatedAt:   target.UpdatedAt,
 		}
 		if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
 			return fmt.Errorf("create target: %w", err)
@@ -109,6 +113,10 @@ func (r *TargetRepository) Delete(ctx context.Context, id string) error {
 }
 
 func targetFromModel(model TargetModel) record.Target {
+	mode := record.Mode(model.CheckMode)
+	if mode == "" {
+		mode = record.ModeChange
+	}
 	return record.Target{
 		ID:        model.ID,
 		Name:      model.Name,
@@ -118,6 +126,10 @@ func targetFromModel(model TargetModel) record.Target {
 		Source:    model.Source,
 		CreatedAt: model.CreatedAt,
 		UpdatedAt: model.UpdatedAt,
+		Check: record.Check{
+			Mode:   mode,
+			Expect: []string(model.CheckExpect),
+		},
 	}
 }
 
@@ -145,6 +157,8 @@ func (r *SnapshotRepository) Latest(ctx context.Context, targetID string) (recor
 		Values:     []string(model.Values),
 		TTL:        time.Duration(model.TTLSeconds) * time.Second,
 		ObservedAt: model.ObservedAt,
+		Satisfied:  model.Satisfied,
+		Reason:     model.Reason,
 	}, nil
 }
 
@@ -156,6 +170,8 @@ func (r *SnapshotRepository) Save(ctx context.Context, snapshot record.Snapshot)
 		Values:     StringList(snapshot.Values),
 		TTLSeconds: int64(snapshot.TTL / time.Second),
 		ObservedAt: snapshot.ObservedAt,
+		Satisfied:  snapshot.Satisfied,
+		Reason:     snapshot.Reason,
 	}
 	if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
 		return fmt.Errorf("save snapshot: %w", err)
@@ -171,14 +187,17 @@ type ChangeRepository struct {
 // Save implements change.Repository.
 func (r *ChangeRepository) Save(ctx context.Context, detected change.Change) error {
 	model := ChangeModel{
-		ID:         detected.ID,
-		TargetID:   detected.TargetID,
-		TargetName: detected.TargetName,
-		RecordType: string(detected.RecordType),
-		Added:      StringList(detected.Added),
-		Removed:    StringList(detected.Removed),
-		DetectedAt: detected.DetectedAt,
-		NotifiedAt: detected.NotifiedAt,
+		ID:           detected.ID,
+		TargetID:     detected.TargetID,
+		TargetName:   detected.TargetName,
+		RecordType:   string(detected.RecordType),
+		Added:        StringList(detected.Added),
+		Removed:      StringList(detected.Removed),
+		DetectedAt:   detected.DetectedAt,
+		NotifiedAt:   detected.NotifiedAt,
+		Kind:         string(changeKind(detected.Kind)),
+		Mode:         string(detected.Mode),
+		AssertReason: detected.Reason,
 	}
 	if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
 		return fmt.Errorf("save change: %w", err)
@@ -235,9 +254,25 @@ func changesFromModels(models []ChangeModel) []change.Change {
 			Removed:    []string(model.Removed),
 			DetectedAt: model.DetectedAt,
 			NotifiedAt: model.NotifiedAt,
+			Kind:       changeKind(change.Kind(model.Kind)),
+			Mode:       record.Mode(model.Mode),
+			Reason:     model.AssertReason,
 		})
 	}
 	return changes
+}
+
+// changeKind normalises the stored kind, so that the rows created before the
+// check modes existed are read as value changes.
+func changeKind(kind change.Kind) change.Kind {
+	switch kind {
+	case change.KindViolated:
+		return change.KindViolated
+	case change.KindRecovered:
+		return change.KindRecovered
+	default:
+		return change.KindValue
+	}
 }
 
 // SubscriberRepository stores notifyable Telegram accounts.

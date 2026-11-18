@@ -204,7 +204,7 @@ func (a *App) Seed(ctx context.Context) error {
 	}
 
 	declared := make(map[string]struct{})
-	for _, declaredRecord := range a.Config.Monitor.Records {
+	for index, declaredRecord := range a.Config.Monitor.Records {
 		name, err := record.CanonicalName(declaredRecord.Name)
 		if err != nil {
 			return err
@@ -224,6 +224,12 @@ func (a *App) Seed(ctx context.Context) error {
 		}
 		target.ID = a.ids.NewID()
 		target.Enabled = declaredRecord.RecordEnabled()
+
+		check, err := record.NewCheck(record.Mode(declaredRecord.Mode), declaredRecord.Expect)
+		if err != nil {
+			return fmt.Errorf("monitor.records[%d]: %w", index, err)
+		}
+		target.Check = check
 
 		if matched, ok := findTarget(existing, target.Identity()); ok {
 			target.ID = matched.ID
@@ -336,6 +342,23 @@ type CheckResult struct {
 	State  CheckState
 	Values []string
 	Error  string
+	// Satisfied is the verdict of the expectation of the record. It is true
+	// when the record declares no expectation.
+	Satisfied bool
+	// Reason explains the verdict of the expectation.
+	Reason string
+}
+
+// Verdict renders the verdict of the expectation of a record. It is empty
+// when the record declares no expectation.
+func (r CheckResult) Verdict() string {
+	if !r.Target.Check.IsDeclared() {
+		return ""
+	}
+	if r.Satisfied {
+		return fmt.Sprintf("%s satisfied", r.Target.Check.EffectiveMode())
+	}
+	return fmt.Sprintf("%s violated: %s", r.Target.Check.EffectiveMode(), r.Reason)
 }
 
 // Check resolves every monitored record once and compares the answers with
@@ -361,7 +384,7 @@ func (a *App) Check(ctx context.Context) ([]CheckResult, error) {
 		if !target.Enabled {
 			continue
 		}
-		result := CheckResult{Target: target, State: CheckUnchanged}
+		result := CheckResult{Target: target, State: CheckUnchanged, Satisfied: true}
 
 		resolution, err := resolver.Resolve(ctx, target)
 		if err != nil {
@@ -388,6 +411,12 @@ func (a *App) Check(ctx context.Context) ([]CheckResult, error) {
 			result.State = CheckNew
 		default:
 			return results, fmt.Errorf("load snapshot of %s: %w", target.Name, err)
+		}
+
+		if target.Check.IsDeclared() {
+			outcome := target.Check.Evaluate(resolution.Values, nil)
+			result.Satisfied = outcome.Satisfied
+			result.Reason = outcome.Reason
 		}
 		results = append(results, result)
 	}

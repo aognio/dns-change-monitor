@@ -83,6 +83,12 @@ type Record struct {
 	Resolver string `toml:"resolver"`
 	// Enabled allows a record to be kept in the file but paused.
 	Enabled *bool `toml:"enabled"`
+	// Mode is the way the record is checked: change, any, exact or regex.
+	// It is empty for the default, the change mode.
+	Mode string `toml:"mode"`
+	// Expect holds the values the record is expected to carry. It is empty
+	// for the change and the any modes.
+	Expect []string `toml:"expect"`
 }
 
 // Pairing controls the lifetime of authorization tokens.
@@ -213,6 +219,9 @@ func (c *Config) Validate() error {
 		if _, err := record.ParseType(rec.Type); err != nil {
 			return fmt.Errorf("monitor.records[%d]: %w", index, err)
 		}
+		if err := validateRecordCheck(index, rec); err != nil {
+			return err
+		}
 	}
 	switch strings.ToLower(c.Log.Level) {
 	case "debug", "info", "warn", "error":
@@ -228,6 +237,21 @@ func (c *Config) Validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("%w: log.file_level %q is not a known level", shared.ErrInvalid, c.Log.FileLevel)
+	}
+	return nil
+}
+
+// validateRecordCheck rejects a broken declaration of the check mode. The
+// rules live in the domain, so the configuration and the command line share
+// them.
+func validateRecordCheck(index int, rec Record) error {
+	mode := strings.TrimSpace(rec.Mode)
+	if len(rec.Expect) > 0 && (mode == "" || strings.EqualFold(mode, string(record.ModeChange))) {
+		return fmt.Errorf("monitor.records[%d]: %w: the change mode takes no expected value",
+			index, shared.ErrInvalid)
+	}
+	if _, err := record.NewCheck(record.Mode(mode), rec.Expect); err != nil {
+		return fmt.Errorf("monitor.records[%d]: %w", index, err)
 	}
 	return nil
 }

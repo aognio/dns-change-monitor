@@ -18,14 +18,18 @@ type StringList []string
 
 // TargetModel is the stored form of a monitored DNS name.
 type TargetModel struct {
-	ID         string    `gorm:"primaryKey;size:64"`
-	Name       string    `gorm:"index:idx_target_identity,unique;size:255"`
-	RecordType string    `gorm:"index:idx_target_identity,unique;size:16"`
-	Resolver   string    `gorm:"index:idx_target_identity,unique;size:255"`
-	Enabled    bool      `gorm:"not null;default:true"`
-	Source     string    `gorm:"size:16"`
-	CreatedAt  time.Time `gorm:"not null"`
-	UpdatedAt  time.Time `gorm:"not null"`
+	ID         string `gorm:"primaryKey;size:64"`
+	Name       string `gorm:"index:idx_target_identity,unique;size:255"`
+	RecordType string `gorm:"index:idx_target_identity,unique;size:16"`
+	Resolver   string `gorm:"index:idx_target_identity,unique;size:255"`
+	Enabled    bool   `gorm:"not null;default:true"`
+	Source     string `gorm:"size:16"`
+	// CheckMode is the way the target is checked: change, any, exact or regex.
+	CheckMode string `gorm:"size:16;default:'change'"`
+	// CheckExpect holds the values the target is expected to carry.
+	CheckExpect StringList `gorm:"type:text"`
+	CreatedAt   time.Time  `gorm:"not null"`
+	UpdatedAt   time.Time  `gorm:"not null"`
 }
 
 // TableName implements the GORM naming convention.
@@ -38,6 +42,11 @@ type SnapshotModel struct {
 	Values     StringList `gorm:"type:text"`
 	TTLSeconds int64      `gorm:"not null;default:0"`
 	ObservedAt time.Time  `gorm:"index;not null"`
+	// Satisfied is the verdict of the check, nil for a target watched for
+	// changes only.
+	Satisfied *bool `gorm:"size:1"`
+	// Reason explains the verdict.
+	Reason string `gorm:"size:255"`
 }
 
 // TableName implements the GORM naming convention.
@@ -53,6 +62,12 @@ type ChangeModel struct {
 	Removed    StringList `gorm:"type:text"`
 	DetectedAt time.Time  `gorm:"index;not null"`
 	NotifiedAt *time.Time `gorm:"index"`
+	// Kind tells what produced the change: value, violated or recovered.
+	Kind string `gorm:"size:16;default:'value'"`
+	// Mode is the check mode of the target when the change was detected.
+	Mode string `gorm:"size:16"`
+	// AssertReason explains the verdict that produced the change.
+	AssertReason string `gorm:"size:255"`
 }
 
 // TableName implements the GORM naming convention.

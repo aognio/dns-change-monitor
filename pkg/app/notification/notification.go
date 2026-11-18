@@ -11,6 +11,7 @@ import (
 
 	"github.com/aognio/dns-change-monitor/pkg/domain/change"
 	"github.com/aognio/dns-change-monitor/pkg/domain/notification"
+	"github.com/aognio/dns-change-monitor/pkg/domain/record"
 	"github.com/aognio/dns-change-monitor/pkg/domain/shared"
 	"github.com/aognio/dns-change-monitor/pkg/domain/subscriber"
 )
@@ -47,7 +48,7 @@ func New(
 // Report delivers a change to every paired subscriber and records that the
 // change has been announced. It reports the first delivery failure, if any.
 func (s *Service) Report(ctx context.Context, detected change.Change) error {
-	if detected.IsEmpty() {
+	if detected.IsEmpty() && detected.Kind == change.KindValue {
 		return nil
 	}
 
@@ -127,13 +128,33 @@ func (s *Service) pairedRecipients(ctx context.Context) ([]notification.Recipien
 
 // Render builds the message body describing a change.
 func Render(detected change.Change) string {
+	switch detected.Kind {
+	case change.KindViolated:
+		return renderAssertion(detected, "DNS assertion violated")
+	case change.KindRecovered:
+		return renderAssertion(detected, "DNS assertion recovered")
+	}
+	return renderValue(detected)
+}
+
+// renderValue builds the message body of a value change. A record declaring
+// an expectation carries the verdict of the expectation next to the change.
+func renderValue(detected change.Change) string {
 	var builder strings.Builder
 	builder.WriteString("DNS change detected\n")
 	builder.WriteString("\n")
 	builder.WriteString(fmt.Sprintf("Record : %s %s", detected.TargetName, detected.RecordType))
 	builder.WriteString("\n")
+	if declared(detected) {
+		builder.WriteString(fmt.Sprintf("Assert : %s", detected.Mode))
+		builder.WriteString("\n")
+	}
 	builder.WriteString(fmt.Sprintf("Time   : %s", detected.DetectedAt.UTC().Format(time.RFC3339)))
 	builder.WriteString("\n")
+	if declared(detected) {
+		builder.WriteString(fmt.Sprintf("Reason : %s", detected.Reason))
+		builder.WriteString("\n")
+	}
 	if len(detected.Added) > 0 {
 		builder.WriteString("\nAdded:\n")
 		for _, value := range detected.Added {
@@ -149,4 +170,39 @@ func Render(detected change.Change) string {
 		}
 	}
 	return builder.String()
+}
+
+// renderAssertion builds the message body of a violated or recovered
+// expectation.
+func renderAssertion(detected change.Change, header string) string {
+	var builder strings.Builder
+	builder.WriteString(header)
+	builder.WriteString("\n")
+	builder.WriteString("\n")
+	builder.WriteString(fmt.Sprintf("Record : %s %s", detected.TargetName, detected.RecordType))
+	builder.WriteString("\n")
+	builder.WriteString(fmt.Sprintf("Assert : %s", detected.Mode))
+	builder.WriteString("\n")
+	builder.WriteString(fmt.Sprintf("Time   : %s", detected.DetectedAt.UTC().Format(time.RFC3339)))
+	builder.WriteString("\n")
+	builder.WriteString(fmt.Sprintf("Reason : %s", detected.Reason))
+	builder.WriteString("\n")
+	if len(detected.Added) == 0 && len(detected.Removed) == 0 {
+		return builder.String()
+	}
+	builder.WriteString("\nChanges since the last observation:\n")
+	for _, value := range detected.Added {
+		builder.WriteString(fmt.Sprintf("  + %s", value))
+		builder.WriteString("\n")
+	}
+	for _, value := range detected.Removed {
+		builder.WriteString(fmt.Sprintf("  - %s", value))
+		builder.WriteString("\n")
+	}
+	return builder.String()
+}
+
+// declared reports whether the change carries the verdict of an expectation.
+func declared(detected change.Change) bool {
+	return detected.Mode != "" && detected.Mode != record.ModeChange
 }

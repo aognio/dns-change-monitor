@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/aognio/dns-change-monitor/pkg/domain/change"
 	"github.com/aognio/dns-change-monitor/pkg/domain/record"
@@ -25,6 +26,9 @@ type Result struct {
 	Checked int
 	// Changed is the number of differences that were detected.
 	Changed int
+	// Violations is the number of targets whose expectation was violated
+	// during the sweep, whether the violation was reported or not.
+	Violations int
 	// Failures lists the targets that could not be resolved.
 	Failures []Failure
 }
@@ -117,7 +121,7 @@ func (s *Service) Sweep(ctx context.Context) (Result, error) {
 			return result, ctx.Err()
 		}
 
-		observed, err := s.observe(ctx, target)
+		observed, violated, err := s.observe(ctx, target)
 		if err != nil {
 			result.Failures = append(result.Failures, Failure{Target: target, Err: err})
 			s.logger.Warn("target resolution failed",
@@ -131,19 +135,23 @@ func (s *Service) Sweep(ctx context.Context) (Result, error) {
 		if observed != nil {
 			result.Changed++
 		}
+		if violated {
+			result.Violations++
+		}
 	}
 	return result, nil
 }
 
 // observe resolves a target and persists the outcome. It returns the detected
-// change, or nil when nothing changed.
-func (s *Service) observe(ctx context.Context, target record.Target) (*change.Change, error) {
+// change, or nil when nothing changed, and whether the expectation of the
+// target was violated.
+func (s *Service) observe(ctx context.Context, target record.Target) (*change.Change, bool, error) {
 	resolution, err := s.resolver.Resolve(ctx, target)
 	if err != nil {
 		// A name without a record is an observation, not a failure: it is
 		// compared with the previous one like any other answer.
 		if !errors.Is(err, record.ErrNoRecords) {
-			return nil, err
+			return nil, false, err
 		}
 		resolution = record.Resolution{}
 	}
@@ -155,51 +163,196 @@ func (s *Service) observe(ctx context.Context, target record.Target) (*change.Ch
 	switch {
 	case err == nil:
 	case errors.Is(err, shared.ErrNotFound):
-		if err := s.snapshots.Save(ctx, record.Snapshot{
-			ID:         s.ids.NewID(),
-			TargetID:   target.ID,
-			Values:     values,
-			TTL:        resolution.TTL,
-			ObservedAt: now,
-		}); err != nil {
-			return nil, fmt.Errorf("save baseline snapshot: %w", err)
+		return s.observeBaseline(ctx, target, values, resolution.TTL, now)
+	default:
+		return nil, false, fmt.Errorf("load previous snapshot: %w", err)
+	}
+
+	if !target.Check.IsDeclared() {
+		return s.observeChange(ctx, target, previous, values, resolution.TTL, now)
+	}
+	return s.observeDeclared(ctx, target, previous, values, resolution.TTL, now)
+}
+
+// observeBaseline records the very first observation of a target. A target
+// declaring an expectation reports it right away when the expectation is
+// violated, even when the baseline is not notified.
+func (s *Service) observeBaseline(
+	ctx context.Context,
+	target record.Target,
+	values []string,
+	ttl time.Duration,
+	now time.Time,
+) (*change.Change, bool, error) {
+	if target.Check.IsDeclared() {
+		outcome := target.Check.Evaluate(values, nil)
+		if err := s.saveSnapshot(ctx, target, values, ttl, now, &outcome); err != nil {
+			return nil, false, err
 		}
-		if !s.notifyBaseline {
+		if outcome.Satisfied {
 			s.logger.Info("baseline recorded",
 				slog.String("target", target.Name),
 				slog.String("type", string(target.Type)),
-				slog.Int("values", len(values)))
-			return nil, nil
+				slog.Int("values", len(values)),
+				slog.String("mode", string(outcome.Mode)))
+			return nil, false, nil
 		}
-		detected, err := change.New(s.ids.NewID(), target, values, nil, now)
+		detected, err := change.NewVerdict(s.ids.NewID(), target, nil, nil,
+			change.KindViolated, outcome.Mode, outcome.Reason, now)
 		if err != nil {
-			return nil, fmt.Errorf("build baseline change: %w", err)
+			return nil, false, fmt.Errorf("build violated change: %w", err)
 		}
-		return s.publish(ctx, detected)
-	default:
-		return nil, fmt.Errorf("load previous snapshot: %w", err)
-	}
-
-	added, removed := record.DiffValues(previous.Values, values)
-	if len(added) == 0 && len(removed) == 0 {
-		return nil, nil
+		published, err := s.publish(ctx, detected)
+		return published, true, err
 	}
 
 	if err := s.snapshots.Save(ctx, record.Snapshot{
 		ID:         s.ids.NewID(),
 		TargetID:   target.ID,
 		Values:     values,
-		TTL:        resolution.TTL,
+		TTL:        ttl,
 		ObservedAt: now,
 	}); err != nil {
-		return nil, fmt.Errorf("save snapshot: %w", err)
+		return nil, false, fmt.Errorf("save baseline snapshot: %w", err)
+	}
+	if !s.notifyBaseline {
+		s.logger.Info("baseline recorded",
+			slog.String("target", target.Name),
+			slog.String("type", string(target.Type)),
+			slog.Int("values", len(values)))
+		return nil, false, nil
+	}
+	detected, err := change.New(s.ids.NewID(), target, values, nil, now)
+	if err != nil {
+		return nil, false, fmt.Errorf("build baseline change: %w", err)
+	}
+	published, err := s.publish(ctx, detected)
+	return published, false, err
+}
+
+// observeChange watches a target for changes. It is the behaviour of the
+// monitor before the check modes existed.
+func (s *Service) observeChange(
+	ctx context.Context,
+	target record.Target,
+	previous record.Snapshot,
+	values []string,
+	ttl time.Duration,
+	now time.Time,
+) (*change.Change, bool, error) {
+	added, removed := record.DiffValues(previous.Values, values)
+	if len(added) == 0 && len(removed) == 0 {
+		return nil, false, nil
+	}
+
+	if err := s.snapshots.Save(ctx, record.Snapshot{
+		ID:         s.ids.NewID(),
+		TargetID:   target.ID,
+		Values:     values,
+		TTL:        ttl,
+		ObservedAt: now,
+	}); err != nil {
+		return nil, false, fmt.Errorf("save snapshot: %w", err)
 	}
 
 	detected, err := change.New(s.ids.NewID(), target, added, removed, now)
 	if err != nil {
-		return nil, fmt.Errorf("build change: %w", err)
+		return nil, false, fmt.Errorf("build change: %w", err)
 	}
-	return s.publish(ctx, detected)
+	published, err := s.publish(ctx, detected)
+	return published, false, err
+}
+
+// observeDeclared checks a target against its expectation. The difference
+// against the previous observation is always reported, the verdict of the
+// expectation is added to the report.
+func (s *Service) observeDeclared(
+	ctx context.Context,
+	target record.Target,
+	previous record.Snapshot,
+	values []string,
+	ttl time.Duration,
+	now time.Time,
+) (*change.Change, bool, error) {
+	outcome := target.Check.Evaluate(values, previous.Values)
+	verdictChanged := verdictChanged(previous, outcome)
+	diffEmpty := len(outcome.Added) == 0 && len(outcome.Removed) == 0
+
+	if err := s.saveSnapshot(ctx, target, values, ttl, now, &outcome); err != nil {
+		return nil, false, err
+	}
+
+	if diffEmpty && !verdictChanged {
+		if !outcome.Satisfied {
+			s.logger.Info("expectation still violated",
+				slog.String("target", target.Name),
+				slog.String("type", string(target.Type)),
+				slog.String("mode", string(outcome.Mode)),
+				slog.String("reason", outcome.Reason))
+		}
+		return nil, !outcome.Satisfied, nil
+	}
+
+	if verdictChanged {
+		kind := change.KindRecovered
+		if !outcome.Satisfied {
+			kind = change.KindViolated
+		}
+		detected, err := change.NewVerdict(s.ids.NewID(), target, outcome.Added, outcome.Removed,
+			kind, outcome.Mode, outcome.Reason, now)
+		if err != nil {
+			return nil, false, fmt.Errorf("build assertion change: %w", err)
+		}
+		published, err := s.publish(ctx, detected)
+		return published, !outcome.Satisfied, err
+	}
+
+	detected, err := change.NewVerdict(s.ids.NewID(), target, outcome.Added, outcome.Removed,
+		change.KindValue, outcome.Mode, outcome.Reason, now)
+	if err != nil {
+		return nil, false, fmt.Errorf("build change: %w", err)
+	}
+	published, err := s.publish(ctx, detected)
+	return published, !outcome.Satisfied, err
+}
+
+// saveSnapshot stores the observation of a target together with the verdict of
+// its expectation.
+func (s *Service) saveSnapshot(
+	ctx context.Context,
+	target record.Target,
+	values []string,
+	ttl time.Duration,
+	now time.Time,
+	outcome *record.Outcome,
+) error {
+	snapshot := record.Snapshot{
+		ID:         s.ids.NewID(),
+		TargetID:   target.ID,
+		Values:     values,
+		TTL:        ttl,
+		ObservedAt: now,
+	}
+	if outcome != nil {
+		satisfied := outcome.Satisfied
+		snapshot.Satisfied = &satisfied
+		snapshot.Reason = outcome.Reason
+	}
+	if err := s.snapshots.Save(ctx, snapshot); err != nil {
+		return fmt.Errorf("save snapshot: %w", err)
+	}
+	return nil
+}
+
+// verdictChanged reports whether the expectation of the target went from
+// satisfied to violated or the other way round. A previous observation
+// without a verdict counts as no verdict at all, so a target that was already
+// violating its expectation is reported once.
+func verdictChanged(previous record.Snapshot, outcome record.Outcome) bool {
+	if previous.Satisfied == nil {
+		return !outcome.Satisfied
+	}
+	return *previous.Satisfied != outcome.Satisfied
 }
 
 func (s *Service) publish(ctx context.Context, detected change.Change) (*change.Change, error) {

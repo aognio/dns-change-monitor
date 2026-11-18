@@ -49,23 +49,50 @@ func checkRecords(args []string) error {
 	}
 
 	failures := 0
+	violations := 0
 	for _, result := range results {
 		switch result.State {
 		case app.CheckMissing:
 			fmt.Printf("%-40s %-6s %s\n", result.Target.Name, result.Target.Type, result.Error)
 			failures++
-		case app.CheckNew:
-			fmt.Printf("%-40s %-6s %s (first observation)\n", result.Target.Name, result.Target.Type, joinValues(result.Values))
-		case app.CheckChanged:
-			fmt.Printf("%-40s %-6s %s (changed)\n", result.Target.Name, result.Target.Type, joinValues(result.Values))
+			continue
 		default:
-			fmt.Printf("%-40s %-6s %s\n", result.Target.Name, result.Target.Type, joinValues(result.Values))
+			fmt.Printf("%-40s %-6s %s%s\n", result.Target.Name, result.Target.Type,
+				joinValues(result.Values), describeVerdict(result))
+		}
+		if !result.Satisfied {
+			violations++
 		}
 	}
 	if failures > 0 {
 		return fmt.Errorf("%d record(s) could not be resolved", failures)
 	}
+	if violations > 0 {
+		return fmt.Errorf("%d expectation(s) violated", violations)
+	}
 	return nil
+}
+
+// describeVerdict renders the verdict of the expectation of a record next to
+// the state of the answer.
+func describeVerdict(result app.CheckResult) string {
+	if !result.Target.Check.IsDeclared() {
+		return describeState(result.State)
+	}
+	verdict := result.Verdict()
+	return fmt.Sprintf(" (%s, %s)", result.State, verdict)
+}
+
+// describeState renders the state of a record declaring no expectation.
+func describeState(state app.CheckState) string {
+	switch state {
+	case app.CheckNew:
+		return " (first observation)"
+	case app.CheckChanged:
+		return " (changed)"
+	default:
+		return ""
+	}
 }
 
 // joinValues renders the answers of a record.
