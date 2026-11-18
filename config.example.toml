@@ -1,0 +1,66 @@
+# Configuration of the DNS change monitor.
+#
+# Every value below can be overridden on the command line with --config, and
+# the bot token can also be supplied through the DNSMON_TELEGRAM_TOKEN
+# environment variable so that it never has to be written down.
+
+[database]
+# Location of the SQLite file holding the monitored records, the detected
+# changes, the pairing tokens and the subscribers.
+path = "data/dnsmon.db"
+
+[telegram]
+# The token issued by BotFather when the bot was created.
+token = "123456789:replace-me-with-the-token-of-your-bot"
+
+# The accounts allowed to pair with the bot and to receive the reports.
+# A leading @ is accepted and removed.
+notify_usernames = ["alice", "bob"]
+
+# How long a long poll request waits for new updates.
+poll_timeout_seconds = 30
+
+[monitor]
+# The delay between two consecutive checks of the monitored records.
+interval_seconds = 60
+
+# The name servers used by the records that do not name one.
+resolvers = ["1.1.1.1:53", "8.8.8.8:53"]
+
+# The timeout of a single query.
+timeout_seconds = 5
+
+# Whether the first observation of a record is reported. The first
+# observation only establishes the reference the following ones are compared
+# to, so it is silent by default.
+notify_on_baseline = false
+
+# The records to watch. They are reconciled with the database at every
+# start: a record removed from this file stops being watched.
+[[monitor.records]]
+name = "example.com"
+type = "A"
+
+[[monitor.records]]
+name = "example.com"
+type = "AAAA"
+
+[[monitor.records]]
+name = "example.com"
+type = "TXT"
+
+[pairing]
+# How long a pairing token stays redeemable.
+token_ttl_minutes = 30
+
+[daemon]
+# Where the background daemon records its process identifier and writes its
+# output.
+pid_file = "data/dnsmon.pid"
+log_file = "data/dnsmon.log"
+
+[log]
+# One of debug, info, warn or error.
+level = "info"
+# One of text or json.
+format = "text"
